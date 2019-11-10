@@ -645,8 +645,8 @@ pub fn compute_lmr_reduction(
     iscp: bool,
     next_state: &GameState,
 ) -> i16 {
-    let mut reduction = ((f64::from(p.depth_left) / 2. - 1.).max(0.).sqrt()
-        + (index as f64 / 2.0 - 1.).max(0.).sqrt()) as i16;
+    let mut reduction =
+        ((f64::from(p.depth_left) - 1.).max(0.).sqrt() + (index as f64 - 1.).max(0.).sqrt()) as i16;
     if iscp {
         reduction /= 2;
     }
@@ -656,8 +656,12 @@ pub fn compute_lmr_reduction(
     if in_check_slow(&next_state) {
         reduction -= 1;
     }
-    if thread.history_score[p.game_state.color_to_move][mv.from as usize][mv.to as usize] > 0 {
+    if thread.history_score[p.game_state.color_to_move][mv.from as usize][mv.to as usize] > 1000 {
         reduction -= 1;
+    } else if thread.history_score[p.game_state.color_to_move][mv.from as usize][mv.to as usize]
+        < -1000
+    {
+        reduction += 1;
     }
     reduction = reduction.min(p.depth_left - 1);
     reduction.max(1)
