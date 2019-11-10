@@ -656,12 +656,8 @@ pub fn compute_lmr_reduction(
     if in_check_slow(&next_state) {
         reduction -= 1;
     }
-    if thread.history_score[p.game_state.color_to_move][mv.from as usize][mv.to as usize] > 1000 {
+    if thread.history_score[p.game_state.color_to_move][mv.from as usize][mv.to as usize] > 0 {
         reduction -= 1;
-    } else if thread.history_score[p.game_state.color_to_move][mv.from as usize][mv.to as usize]
-        < -1000
-    {
-        reduction += 1;
     }
     reduction = reduction.min(p.depth_left - 1);
     reduction.max(1)
