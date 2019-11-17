@@ -101,6 +101,10 @@ pub struct EvaluationResult {
     pub trace: Trace,
 }
 
+pub fn scale_50_move_counter(counter: usize) -> f64 {
+    let counter = counter as f64;
+    1. / (1. + (counter / 5. - 4.).exp()) + 0.02
+}
 pub fn eval_game_state_from_null(g: &GameState) -> EvaluationResult {
     let mgsac = GameStateAttackContainer::from_state(g);
     eval_game_state(g, &mgsac, -16000, 16000)
@@ -282,7 +286,11 @@ pub fn eval_game_state(
             res.0, phase, res.1, phase, final_res,
         ));
     }
+
     result.final_eval = final_res;
+    if g.half_moves >= 2 {
+        result.final_eval = (result.final_eval as f64 * scale_50_move_counter(g.half_moves)) as i16;
+    }
     result
 }
 
