@@ -138,7 +138,6 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
 
     //Step 14. Iterate through all moves
     let mut current_max_score = STANDARD_SCORE;
-    let mut second_best_score = STANDARD_SCORE;
     let mut index: usize = 0;
     let mut quiets_tried: usize = 0;
     let mut move_orderer = MoveOrderer {
@@ -295,7 +294,6 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
         // Also update UCI pv
         if following_score > current_max_score && !thread.self_stop {
             thread.pv_table[p.current_depth].pv[0] = Some(mv);
-            second_best_score = current_max_score;
             current_max_score = following_score;
             concatenate_pv(p.current_depth, thread);
             uci_report_pv(
@@ -305,8 +303,6 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
                 following_score <= original_alpha,
                 following_score >= p.beta,
             );
-        } else if following_score > second_best_score {
-            second_best_score = following_score;
         }
 
         //Step 14.10. Update alpha if score raises alpha
@@ -367,22 +363,6 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
         );
     }
 
-    if current_max_score - 25 > second_best_score
-        && p.current_depth == 0
-        && current_max_score < p.beta
-    {
-        thread
-            .itcs
-            .report_singular_search(p.depth_left as usize, true, false);
-    } else if second_best_score + 10 >= current_max_score
-        && p.current_depth == 0
-        && current_max_score < p.beta
-        && current_max_score != 0
-    {
-        thread
-            .itcs
-            .report_singular_search(p.depth_left as usize, false, true);
-    }
     //Step 17. Return
     current_max_score
 }

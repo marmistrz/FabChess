@@ -3,17 +3,15 @@ pub const MIN_MOVE_OVERHEAD: u64 = 0;
 pub const MAX_MOVE_OVERHEAD: u64 = 20000;
 
 pub struct TimeControl {
-    typ: TimeControlType,
+    pub typ: TimeControlType,
     pub stable_pv: bool,
     pub aspired_time: u64,
-    pub saved_time: u64,
 }
 impl Default for TimeControl {
     fn default() -> Self {
         TimeControl {
             typ: TimeControlType::Infinite,
             aspired_time: 0u64,
-            saved_time: 0u64,
             stable_pv: false,
         }
     }
@@ -104,7 +102,7 @@ impl TimeControl {
     pub fn update_aspired_time(&mut self, mult: f64) {
         if self.typ != TimeControlType::Infinite {
             let mut new = (self.aspired_time as f64 * mult) as u64;
-            new = new.min((2.5 * self.typ.base_time() as f64 + self.typ.increment() as f64) as u64);
+            new = new.min((5. * self.typ.base_time() as f64 + self.typ.increment() as f64) as u64);
             new = new.max((0.4 * self.typ.compound_time() as f64) as u64);
             new = new.min(self.typ.time_left() / 3 + self.typ.increment());
             println!(
@@ -117,7 +115,7 @@ impl TimeControl {
     pub fn update_type(&mut self, typ: TimeControlType) {
         self.typ = typ;
         if self.typ != TimeControlType::Infinite {
-            self.aspired_time = self.typ.compound_time() + self.saved_time / 10;
+            self.aspired_time = self.typ.compound_time();
             self.update_aspired_time(1.0);
         }
         self.stable_pv = false;
@@ -129,22 +127,12 @@ impl TimeControl {
                 time_spent + 4 * move_overhead > self.typ.time_left()
                     || (self.stable_pv
                         || time_spent + move_overhead
-                            > (self.typ.compound_time() as f64 + 1.5 * self.typ.base_time() as f64)
+                            > (self.typ.compound_time() as f64 + 4. * self.typ.base_time() as f64)
                                 as u64)
                         && time_spent + move_overhead > self.aspired_time
             }
             TimeControlType::Infinite => false,
             TimeControlType::MoveTime(x) => time_spent + move_overhead > x,
-        }
-    }
-
-    pub fn time_saved(&self, time_spent: u64) -> i64 {
-        if let TimeControlType::Incremental(_, _) = self.typ {
-            time_spent as i64 - self.typ.compound_time() as i64
-        } else if let TimeControlType::Tournament(_, _, _) = self.typ {
-            time_spent as i64 - self.typ.compound_time() as i64
-        } else {
-            0
         }
     }
 

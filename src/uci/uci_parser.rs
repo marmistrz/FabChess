@@ -46,7 +46,6 @@ pub fn parse_loop() {
             "ucinewgame" | "newgame" => {
                 newgame(&mut us);
                 itcs.cache().clear();
-                itcs.tc.lock().unwrap().saved_time = 0;
             }
             "isready" => isready(&itcs, true),
             "position" => {

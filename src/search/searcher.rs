@@ -135,18 +135,6 @@ impl InterThreadCommunicationSystem {
             .sum()
     }
 
-    pub fn report_singular_search(&self, depth: usize, singular: bool, non_singular: bool) {
-        if depth <= 10 {
-            return;
-        }
-        if singular {
-            debug_assert!(!non_singular);
-            self.tc.lock().unwrap().update_aspired_time(0.98);
-        } else if non_singular {
-            debug_assert!(!singular);
-            self.tc.lock().unwrap().update_aspired_time(1.005);
-        }
-    }
     pub fn register_pv(
         &self,
         scored_pv: &ScoredPrincipalVariation,
@@ -159,21 +147,25 @@ impl InterThreadCommunicationSystem {
             if curr_best.pv.pv[0] == scored_pv.pv.pv[0] {
                 let tc = &mut *self.tc.lock().unwrap();
                 if fail_low {
-                    tc.stable_pv = false;
-                    tc.update_aspired_time(1.015);
+                    tc.update_aspired_time(1.03);
                 } else {
                     tc.stable_pv = true;
-                    tc.update_aspired_time(0.99);
+                    if fail_high && curr_best.score == 0 {
+                        tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
+                        tc.update_aspired_time(1.02);
+                    } else {
+                        tc.update_aspired_time(0.985);
+                    }
                 }
             } else {
                 let tc = &mut *self.tc.lock().unwrap();
                 tc.stable_pv = false;
+                tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
                 if fail_high {
                     //PV_CHANGE
-
-                    tc.update_aspired_time(1.04);
+                    tc.update_aspired_time(1.05);
                 } else if scored_pv.score.abs() >= 5 {
-                    tc.update_aspired_time(1.015);
+                    tc.update_aspired_time(1.03);
                 }
             }
         }
@@ -181,7 +173,7 @@ impl InterThreadCommunicationSystem {
         if curr_best.depth < scored_pv.depth
             || (curr_best.depth == scored_pv.depth && curr_best.score < scored_pv.score)
         {
-            if !fail_low {
+            if !fail_low || curr_best.pv.pv[0] == scored_pv.pv.pv[0] {
                 *curr_best = scored_pv.clone();
             }
             //Report to UCI
@@ -530,9 +522,6 @@ pub fn search_move(
         panic!("The root position given does not have any legal move!");
     } else if movelist.move_list.len() == 1 {
         println!("bestmove {:?}", movelist.move_list[0].0);
-
-        let tc = &mut *itcs.tc.lock().unwrap();
-        tc.saved_time = (tc.saved_time as i64 + tc.time_saved(0)).max(0) as u64;
         return None;
     }
 
@@ -568,10 +557,6 @@ pub fn search_move(
 
     //Step 6. Report to UCI
     itcs.report_bestmove();
-    //Store new saved time
-    let elapsed_time = itcs.get_time_elapsed();
-    let tc = &mut *itcs.tc.lock().unwrap();
-    tc.saved_time = (tc.saved_time as i64 + tc.time_saved(elapsed_time)).max(0) as u64;
     //And return
     let best_score = itcs.best_pv.lock().unwrap().score;
     Some(best_score)
