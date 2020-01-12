@@ -151,7 +151,9 @@ impl InterThreadCommunicationSystem {
                 } else {
                     tc.stable_pv = true;
                     if fail_high && curr_best.score == 0 {
-                        tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
+                        if tc.typ != TimeControlType::Infinite {
+                            tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
+                        }
                         tc.update_aspired_time(1.02);
                     } else {
                         tc.update_aspired_time(0.985);
@@ -160,7 +162,9 @@ impl InterThreadCommunicationSystem {
             } else {
                 let tc = &mut *self.tc.lock().unwrap();
                 tc.stable_pv = false;
-                tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
+                if tc.typ != TimeControlType::Infinite {
+                    tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
+                }
                 if fail_high {
                     //PV_CHANGE
                     tc.update_aspired_time(1.05);
