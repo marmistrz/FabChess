@@ -96,7 +96,7 @@ fn bench(depth: usize) {
             depth as i16,
             state,
             Vec::new(),
-            core::search::timecontrol::TimeControl::Infinite,
+            core::search::timecontrol::TimeControlType::Infinite,
         );
         nodes += itcs.get_nodes_sum();
         itcs.cache().clear();

@@ -138,6 +138,7 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
 
     //Step 14. Iterate through all moves
     let mut current_max_score = STANDARD_SCORE;
+    let mut second_best_score = STANDARD_SCORE;
     let mut index: usize = 0;
     let mut quiets_tried: usize = 0;
     let mut move_orderer = MoveOrderer {
@@ -294,14 +295,18 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
         // Also update UCI pv
         if following_score > current_max_score && !thread.self_stop {
             thread.pv_table[p.current_depth].pv[0] = Some(mv);
+            second_best_score = current_max_score;
             current_max_score = following_score;
             concatenate_pv(p.current_depth, thread);
             uci_report_pv(
                 &p,
                 thread,
                 following_score,
-                following_score > original_alpha,
+                following_score <= original_alpha,
+                following_score >= p.beta,
             );
+        } else if following_score > second_best_score {
+            second_best_score = following_score;
         }
 
         //Step 14.10. Update alpha if score raises alpha
@@ -333,7 +338,9 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
 
     thread.history.pop();
 
-    debug_assert!(!move_orderer.has_legal_move || current_max_score > STANDARD_SCORE);
+    debug_assert!(
+        !move_orderer.has_legal_move || current_max_score > STANDARD_SCORE || thread.self_stop
+    );
     //Step 15. Evaluate leafs correctly
     let game_status =
         check_end_condition(p.game_state, current_max_score > STANDARD_SCORE, incheck);
@@ -360,6 +367,22 @@ pub fn principal_variation_search(mut p: CombinedSearchParameters, thread: &mut 
         );
     }
 
+    if current_max_score - 25 > second_best_score
+        && p.current_depth == 0
+        && current_max_score < p.beta
+    {
+        thread
+            .itcs
+            .report_singular_search(p.depth_left as usize, true, false);
+    } else if second_best_score + 10 >= current_max_score
+        && p.current_depth == 0
+        && current_max_score < p.beta
+        && current_max_score != 0
+    {
+        thread
+            .itcs
+            .report_singular_search(p.depth_left as usize, false, true);
+    }
     //Step 17. Return
     current_max_score
 }
@@ -593,7 +616,8 @@ pub fn uci_report_pv(
     p: &CombinedSearchParameters,
     thread: &mut Thread,
     following_score: i16,
-    no_fail: bool,
+    fail_low: bool,
+    fail_high: bool,
 ) {
     if p.current_depth == 0 {
         thread.replace_current_pv(
@@ -603,7 +627,8 @@ pub fn uci_report_pv(
                 score: following_score,
                 depth: p.depth_left as usize,
             },
-            no_fail,
+            fail_low,
+            fail_high,
         );
     }
 }

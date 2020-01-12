@@ -1,44 +1,95 @@
-pub const DEFAULT_MOVE_OVERHEAD: u64 = 25;
+pub const DEFAULT_MOVE_OVERHEAD: u64 = 35;
 pub const MIN_MOVE_OVERHEAD: u64 = 0;
 pub const MAX_MOVE_OVERHEAD: u64 = 20000;
 
-pub struct TimeControlInformation {
-    pub time_saved: u64,
+pub struct TimeControl {
+    typ: TimeControlType,
     pub stable_pv: bool,
-    pub high_score_diff: bool,
+    pub aspired_time: u64,
+    pub saved_time: u64,
 }
-
-impl TimeControlInformation {
-    pub fn new(time_saved: u64) -> Self {
-        TimeControlInformation {
-            time_saved,
+impl Default for TimeControl {
+    fn default() -> Self {
+        TimeControl {
+            typ: TimeControlType::Infinite,
+            aspired_time: 0u64,
+            saved_time: 0u64,
             stable_pv: false,
-            high_score_diff: false,
         }
     }
 }
-
-#[derive(Clone, Copy)]
-pub enum TimeControl {
+#[derive(Clone, Copy, PartialEq)]
+pub enum TimeControlType {
     Incremental(u64, u64),
     MoveTime(u64),
     Infinite,
     Tournament(u64, u64, usize),
 }
+impl TimeControlType {
+    pub fn base_time(&self) -> u64 {
+        match *self {
+            TimeControlType::Infinite => panic!("Don't call base time on infinite!"),
+            TimeControlType::MoveTime(x) => x,
+            TimeControlType::Incremental(x, y) => TimeControlType::Tournament(x, y, 25).base_time(),
+            TimeControlType::Tournament(x, _, mv) => x / mv as u64,
+        }
+    }
 
-impl TimeControl {
+    pub fn increment(&self) -> u64 {
+        match *self {
+            TimeControlType::Incremental(_, inc) => inc,
+            TimeControlType::MoveTime(_) => 0,
+            TimeControlType::Infinite => panic!("Don't call this on Infinite"),
+            TimeControlType::Tournament(_, inc, _) => inc,
+        }
+    }
+
+    pub fn compound_time(&self) -> u64 {
+        self.base_time() + self.increment()
+    }
+    pub fn update(&mut self, time_spent: u64, tournament_info: Option<(usize, u64)>) {
+        match self {
+            TimeControlType::Incremental(left, inc) => {
+                assert!(*left > time_spent);
+                *self = TimeControlType::Incremental(*left - time_spent + *inc, *inc);
+            }
+            TimeControlType::Infinite => panic!("Should not call updat eon Infinite"),
+            TimeControlType::Tournament(left, inc, movestogo) => {
+                assert!(*left > time_spent);
+                let mut new_left = *left - time_spent + *inc;
+                if *movestogo == 0 {
+                    new_left += tournament_info.unwrap().1;
+                    *movestogo = tournament_info.unwrap().0;
+                } else {
+                    *movestogo -= 1;
+                }
+                *self = TimeControlType::Tournament(new_left, *inc, *movestogo);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn time_left(&self) -> u64 {
+        match self {
+            TimeControlType::Incremental(left, _) => *left,
+            TimeControlType::MoveTime(left) => *left,
+            TimeControlType::Infinite => panic!("Should not call time_left on Infinite"),
+            TimeControlType::Tournament(left, _, _) => *left,
+        }
+    }
+
     pub fn to_go(&self, white: bool) -> String {
-        match &self {
-            TimeControl::Incremental(time_left, inc) => {
+        match self {
+            TimeControlType::Incremental(time_left, inc) => {
                 if white {
                     format!("wtime {} winc {}", time_left, inc)
                 } else {
                     format!("btime {} binc {}", time_left, inc)
                 }
             }
-            TimeControl::MoveTime(time) => format!("movetime {}", time),
-            TimeControl::Infinite => "infinite".to_owned(),
-            TimeControl::Tournament(time_left, inc, movestogo) => {
+            TimeControlType::MoveTime(time) => format!("movetime {}", time),
+            TimeControlType::Infinite => "infinite".to_owned(),
+            TimeControlType::Tournament(time_left, inc, movestogo) => {
                 if white {
                     format!("wtime {} winc {} movestogo {}", time_left, inc, movestogo)
                 } else {
@@ -47,150 +98,72 @@ impl TimeControl {
             }
         }
     }
-    pub fn update(&mut self, time_spent: u64, tournament_info: Option<(usize, u64)>) {
-        match self {
-            TimeControl::Incremental(left, inc) => {
-                assert!(*left > time_spent);
-                *self = TimeControl::Incremental(*left - time_spent + *inc, *inc);
-            }
-            TimeControl::MoveTime(time) => {
-                *self = TimeControl::MoveTime(*time);
-            }
-            TimeControl::Infinite => panic!("Should not call updat eon Infinite"),
-            TimeControl::Tournament(left, inc, movestogo) => {
-                assert!(*left > time_spent);
-                let mut new_left = *left - time_spent + *inc;
-                if *movestogo == 0 {
-                    new_left += tournament_info.unwrap().1;
-                    *movestogo = tournament_info.unwrap().0;
-                }
-                *self = TimeControl::Tournament(new_left, *inc, *movestogo);
-            }
+}
+
+impl TimeControl {
+    pub fn update_aspired_time(&mut self, mult: f64) {
+        if self.typ != TimeControlType::Infinite {
+            let mut new = (self.aspired_time as f64 * mult) as u64;
+            new = new.min((2.5 * self.typ.base_time() as f64 + self.typ.increment() as f64) as u64);
+            new = new.max((0.4 * self.typ.compound_time() as f64) as u64);
+            new = new.min(self.typ.time_left() / 3 + self.typ.increment());
+            println!(
+                "Update aspire. Old: {} ; Mult: {}; New: {}",
+                self.aspired_time, mult, new
+            );
+            self.aspired_time = new;
         }
     }
-    pub fn time_left(&self) -> u64 {
-        match self {
-            TimeControl::Incremental(left, _) => *left,
-            TimeControl::MoveTime(left) => *left,
-            TimeControl::Infinite => panic!("Should not call time_left on Infinite"),
-            TimeControl::Tournament(left, _, _) => *left,
+    pub fn update_type(&mut self, typ: TimeControlType) {
+        self.typ = typ;
+        if self.typ != TimeControlType::Infinite {
+            self.aspired_time = self.typ.compound_time() + self.saved_time / 10;
+            self.update_aspired_time(1.0);
         }
-    }
-    pub fn time_over(
-        &self,
-        time_spent: u64,
-        tc_information: &TimeControlInformation,
-        move_overhead: u64,
-    ) -> bool {
-        if let TimeControl::Incremental(mytime, myinc) = self {
-            if time_spent as isize > *mytime as isize - 4 * move_overhead as isize {
-                return true;
-            }
-            let normal_time = ((*mytime as f64 - tc_information.time_saved as f64) / 30.0) as u64
-                + myinc
-                - move_overhead;
-            let time_aspired = if tc_information.time_saved < normal_time {
-                ((normal_time as f64 * 0.85) as u64).max(*myinc)
-            } else {
-                normal_time.max(*myinc)
-            };
-            if time_spent < time_aspired {
-                return false;
-            }
-            if tc_information.stable_pv && !tc_information.high_score_diff {
-                return true;
-            }
-            if tc_information.high_score_diff {
-                return time_spent as f64 > 0.85 * (normal_time + tc_information.time_saved) as f64;
-            }
-            //Non stable pv so we increase time
-            return time_spent as f64 > 1.15 * (normal_time + tc_information.time_saved) as f64;
-        } else if let TimeControl::MoveTime(move_time) = self {
-            return time_spent > move_time - move_overhead || *move_time < move_overhead;
-        } else if let TimeControl::Infinite = self {
-            return false;
-        } else if let TimeControl::Tournament(mytime, myinc, movestogo) = self {
-            if time_spent as isize > *mytime as isize - 4 * move_overhead as isize {
-                return true;
-            }
-            let normal_time = ((*mytime as f64 - tc_information.time_saved as f64)
-                / *movestogo as f64) as u64
-                + myinc
-                - move_overhead;
-            let time_aspired = if tc_information.time_saved < normal_time {
-                (normal_time as f64 * 0.85) as u64
-            } else {
-                normal_time
-            };
-            if time_spent < time_aspired {
-                return false;
-            }
-            if tc_information.stable_pv {
-                return true;
-            }
-            //Non stable pv so we increase time
-            return time_spent as f64 > 1.15 * (normal_time + tc_information.time_saved) as f64;
-        }
-        panic!("Invalid Timecontrol");
+        self.stable_pv = false;
     }
 
-    pub fn time_saved(&self, time_spent: u64, saved: u64, move_overhead: u64) -> i64 {
-        if let TimeControl::Incremental(mytime, myinc) = self {
-            let normal_timecontrol =
-                ((*mytime as f64 - saved as f64) / 30.0) as u64 + myinc - move_overhead;
-            normal_timecontrol as i64 - time_spent as i64
-        } else if let TimeControl::Tournament(mytime, myinc, movestogo) = self {
-            let normal_timecontrol = ((*mytime as f64 - saved as f64) / *movestogo as f64) as u64
-                + myinc
-                - move_overhead;
-            normal_timecontrol as i64 - time_spent as i64
+    pub fn time_over(&self, time_spent: u64, move_overhead: u64) -> bool {
+        match self.typ {
+            TimeControlType::Incremental(_, _) | TimeControlType::Tournament(_, _, _) => {
+                time_spent + 4 * move_overhead > self.typ.time_left()
+                    || (self.stable_pv
+                        || time_spent + move_overhead
+                            > (self.typ.compound_time() as f64 + 1.5 * self.typ.base_time() as f64)
+                                as u64)
+                        && time_spent + move_overhead > self.aspired_time
+            }
+            TimeControlType::Infinite => false,
+            TimeControlType::MoveTime(x) => time_spent + move_overhead > x,
+        }
+    }
+
+    pub fn time_saved(&self, time_spent: u64) -> i64 {
+        if let TimeControlType::Incremental(_, _) = self.typ {
+            time_spent as i64 - self.typ.compound_time() as i64
+        } else if let TimeControlType::Tournament(_, _, _) = self.typ {
+            time_spent as i64 - self.typ.compound_time() as i64
         } else {
             0
         }
     }
 
-    pub fn as_string(&self, tc_information: &TimeControlInformation, move_overhead: u64) -> String {
+    pub fn as_string(&self) -> String {
         let mut res_str: String = String::new();
-        if let TimeControl::Incremental(mytime, myinc) = self {
+        if let TimeControlType::Incremental(mytime, myinc) = self.typ {
             res_str.push_str(&format!("My Time: {}\n", mytime));
             res_str.push_str(&format!("My Inc: {}\n", myinc));
-            let normal_time = ((*mytime as f64 - tc_information.time_saved as f64) / 30.0) as u64
-                + myinc
-                - move_overhead;
-            let time_aspired = if tc_information.time_saved < normal_time {
-                ((normal_time as f64 * 0.85) as u64).max(*myinc)
-            } else {
-                normal_time.max(*myinc)
-            };
-            res_str.push_str(&format!("My normal time I would spend: {}\n", normal_time));
-            res_str.push_str(&format!(
-                "My aspired time I would spend: {}\n",
-                time_aspired
-            ));
-        } else if let TimeControl::MoveTime(time) = self {
+            res_str.push_str(&format!("Time I aspire to spend: {}\n", self.aspired_time));
+        } else if let TimeControlType::MoveTime(time) = self.typ {
             res_str.push_str(&format!("Limited movetime: {}\n", time));
-        } else if let TimeControl::Infinite = self {
+        } else if let TimeControlType::Infinite = self.typ {
             res_str.push_str("Infinite Time!\n");
-        } else if let TimeControl::Tournament(mytime, myinc, movestogo) = self {
+        } else if let TimeControlType::Tournament(mytime, myinc, movestogo) = self.typ {
             res_str.push_str(&format!("My Time: {}\n", mytime));
             res_str.push_str(&format!("My Inc: {}\n", myinc));
             res_str.push_str(&format!("Moves to go : {}\n", movestogo));
-            let normal_time = ((*mytime as f64 - tc_information.time_saved as f64)
-                / *movestogo as f64) as u64
-                + myinc
-                - move_overhead;
-            let time_aspired = if tc_information.time_saved < normal_time {
-                (normal_time as f64 * 0.85) as u64
-            } else {
-                normal_time
-            };
-            res_str.push_str(&format!("My normal time I would spend: {}\n", normal_time));
-            res_str.push_str(&format!(
-                "My aspired time I would spend: {}\n",
-                time_aspired
-            ));
+            res_str.push_str(&format!("Time I aspire to spend: {}\n", self.aspired_time));
         }
-
         res_str
     }
 }

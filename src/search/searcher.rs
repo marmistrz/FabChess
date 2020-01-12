@@ -13,10 +13,10 @@ use crate::board_representation::game_state_attack_container::GameStateAttackCon
 use crate::move_generation::makemove::make_move;
 use crate::move_generation::movegen::{generate_moves, MoveList};
 use crate::search::reserved_memory::{ReservedAttackContainer, ReservedMoveList};
+use crate::search::timecontrol::TimeControlType;
 use crate::search::{CombinedSearchParameters, ScoredPrincipalVariation, MATE_SCORE};
 use crate::uci::uci_engine::UCIOptions;
 use std::cell::UnsafeCell;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -42,7 +42,6 @@ pub enum DepthInformation {
 pub struct InterThreadCommunicationSystem {
     pub uci_options: UnsafeCell<UCIOptions>,
     pub best_pv: Mutex<ScoredPrincipalVariation>,
-    pub stable_pv: AtomicBool,
     pub depth_info: Mutex<[DepthInformation; MAX_SEARCH_DEPTH]>,
     pub start_time: RwLock<Instant>, //Only used for reporting
     pub nodes_searched: UnsafeCell<Vec<AtomicU64>>, // Only used for reporting
@@ -51,7 +50,7 @@ pub struct InterThreadCommunicationSystem {
     pub cache_status: AtomicUsize,
     pub last_cache_status: Mutex<Option<Instant>>,
     pub timeout_flag: RwLock<bool>,
-    pub saved_time: AtomicU64,
+    pub tc: Mutex<TimeControl>,
     pub tx: RwLock<Vec<Sender<ThreadInstruction>>>,
     rx_f: Receiver<()>,
     tx_f: Sender<()>,
@@ -72,7 +71,6 @@ impl InterThreadCommunicationSystem {
         InterThreadCommunicationSystem {
             uci_options: UnsafeCell::new(UCIOptions::default()),
             best_pv: Mutex::new(ScoredPrincipalVariation::default()),
-            stable_pv: AtomicBool::new(false),
             depth_info: Mutex::new([DepthInformation::UnSearched; MAX_SEARCH_DEPTH]),
             nodes_searched: UnsafeCell::new(Vec::new()),
             seldepth: AtomicUsize::new(0),
@@ -81,7 +79,7 @@ impl InterThreadCommunicationSystem {
             cache_status: AtomicUsize::new(0),
             cache: UnsafeCell::new(Cache::with_size(0)),
             timeout_flag: RwLock::new(false),
-            saved_time: AtomicU64::new(0u64),
+            tc: Mutex::new(TimeControl::default()),
             tx: RwLock::new(Vec::new()),
             rx_f,
             tx_f,
@@ -137,19 +135,53 @@ impl InterThreadCommunicationSystem {
             .sum()
     }
 
-    pub fn register_pv(&self, scored_pv: &ScoredPrincipalVariation, no_fail: bool) {
+    pub fn report_singular_search(&self, depth: usize, singular: bool, non_singular: bool) {
+        if depth <= 10 {
+            return;
+        }
+        if singular {
+            debug_assert!(!non_singular);
+            self.tc.lock().unwrap().update_aspired_time(0.98);
+        } else if non_singular {
+            debug_assert!(!singular);
+            self.tc.lock().unwrap().update_aspired_time(1.005);
+        }
+    }
+    pub fn register_pv(
+        &self,
+        scored_pv: &ScoredPrincipalVariation,
+        fail_low: bool,
+        fail_high: bool,
+    ) {
         let mut curr_best = self.best_pv.lock().unwrap();
-        self.stable_pv.store(false, Ordering::Relaxed);
         //Update pv stability
-        if let Some(other_mv) = curr_best.pv.pv[0] {
-            if other_mv == scored_pv.pv.pv[0].unwrap() && no_fail {
-                self.stable_pv.store(true, Ordering::Relaxed);
+        if scored_pv.depth > 10 {
+            if curr_best.pv.pv[0] == scored_pv.pv.pv[0] {
+                let tc = &mut *self.tc.lock().unwrap();
+                if fail_low {
+                    tc.stable_pv = false;
+                    tc.update_aspired_time(1.015);
+                } else {
+                    tc.stable_pv = true;
+                    tc.update_aspired_time(0.99);
+                }
+            } else {
+                let tc = &mut *self.tc.lock().unwrap();
+                tc.stable_pv = false;
+                if fail_high {
+                    //PV_CHANGE
+
+                    tc.update_aspired_time(1.04);
+                } else if scored_pv.score.abs() >= 5 {
+                    tc.update_aspired_time(1.015);
+                }
             }
         }
+
         if curr_best.depth < scored_pv.depth
             || (curr_best.depth == scored_pv.depth && curr_best.score < scored_pv.score)
         {
-            if no_fail {
+            if !fail_low {
                 *curr_best = scored_pv.clone();
             }
             //Report to UCI
@@ -200,6 +232,11 @@ impl InterThreadCommunicationSystem {
                 .as_ref()
                 .expect("Could not unwrap pv for bestmove!")
         );
+        println!(
+            "info String Time Aspired: {}",
+            self.tc.lock().unwrap().aspired_time
+        );
+        println!("info String Time spent: {}", self.get_time_elapsed());
     }
 
     pub fn get_next_depth(&self, mut from_depth: usize) -> (usize, bool) {
@@ -241,7 +278,7 @@ impl InterThreadCommunicationSystem {
 unsafe impl std::marker::Sync for InterThreadCommunicationSystem {}
 pub enum ThreadInstruction {
     Exit,
-    StartSearch(i16, GameState, TimeControl, History, u64),
+    StartSearch(i16, GameState, History),
 }
 
 pub struct Thread {
@@ -259,7 +296,6 @@ pub struct Thread {
     pub history_score: [[[isize; 64]; 64]; 2],
     pub see_buffer: Vec<i16>,
     pub search_statistics: SearchStatistics,
-    pub tc: TimeControl, //Only thread 0 takes care of Timecontrol though
     pub time_saved: u64,
     pub self_stop: bool, //This is set when timeout_stop is set(timeout_stop isn't always polled)
     pub current_pv: ScoredPrincipalVariation,
@@ -274,9 +310,10 @@ impl Thread {
         &mut self,
         root: &GameState,
         scored_pv: ScoredPrincipalVariation,
-        no_fail: bool,
+        fail_low: bool,
+        fail_high: bool,
     ) {
-        self.itcs.register_pv(&scored_pv, no_fail);
+        self.itcs.register_pv(&scored_pv, fail_low, fail_high);
         self.current_pv = scored_pv;
         self.pv_applicable.clear();
         self.pv_applicable.push(root.hash);
@@ -319,7 +356,6 @@ impl Thread {
             history_score: [[[0; 64]; 64]; 2],
             see_buffer: vec![0i16; MAX_SEARCH_DEPTH],
             search_statistics: SearchStatistics::default(),
-            tc: TimeControl::MoveTime(0u64),
             time_saved: 0u64,
             self_stop: false,
             current_pv: ScoredPrincipalVariation::default(),
@@ -338,10 +374,9 @@ impl Thread {
                     self.tx.send(()).expect("Error sending exit flag!");
                     break;
                 }
-                ThreadInstruction::StartSearch(max_depth, state, tc, history, time_saved) => {
+                ThreadInstruction::StartSearch(max_depth, state, history) => {
                     self.root_plies_played = (state.full_moves - 1) * 2 + state.color_to_move;
                     self.history = history;
-                    self.time_saved = time_saved;
                     self.pv_applicable.clear();
                     self.current_pv = ScoredPrincipalVariation::default();
                     self.main_thread_in_depth = false;
@@ -350,7 +385,6 @@ impl Thread {
                     self.bf_score = [[[1; 64]; 64]; 2];
                     self.history_score = [[[0; 64]; 64]; 2];
                     self.search_statistics = SearchStatistics::default();
-                    self.tc = tc;
                     self.self_stop = false;
                     self.search(max_depth, state);
                     self.tx.send(()).expect("Error sending finish flag!");
@@ -467,22 +501,21 @@ pub fn search_move(
     max_depth: i16,
     game_state: GameState,
     history: Vec<GameState>,
-    tc: TimeControl,
+    tc: TimeControlType,
 ) -> Option<i16> {
     //1. Prepare itcs (reset things from previous search)
     *itcs.best_pv.lock().unwrap() = ScoredPrincipalVariation::default();
-    itcs.stable_pv.store(false, Ordering::Relaxed);
     *itcs.depth_info.lock().unwrap() = [DepthInformation::UnSearched; MAX_SEARCH_DEPTH];
     itcs.nodes_searched()
         .iter()
         .for_each(|x| x.store(0u64, Ordering::Relaxed));
     itcs.seldepth.store(0, Ordering::Relaxed);
     *itcs.start_time.write().unwrap() = Instant::now();
+    itcs.tc.lock().unwrap().update_type(tc);
     *itcs.last_cache_status.lock().unwrap() = None;
     itcs.cache_status.store(0, Ordering::Relaxed);
     *itcs.timeout_flag.write().unwrap() = false;
 
-    let time_saved_before = itcs.saved_time.load(Ordering::Relaxed);
     //Step 1. Check how many legal moves there are
     let mut movelist = MoveList::default();
     generate_moves(
@@ -498,10 +531,8 @@ pub fn search_move(
     } else if movelist.move_list.len() == 1 {
         println!("bestmove {:?}", movelist.move_list[0].0);
 
-        let new_timesaved: u64 = (time_saved_before as i64
-            + tc.time_saved(0, time_saved_before, itcs.uci_options().move_overhead))
-        .max(0) as u64;
-        itcs.saved_time.store(new_timesaved, Ordering::Relaxed);
+        let tc = &mut *itcs.tc.lock().unwrap();
+        tc.saved_time = (tc.saved_time as i64 + tc.time_saved(0)).max(0) as u64;
         return None;
     }
 
@@ -523,9 +554,7 @@ pub fn search_move(
         tx.send(ThreadInstruction::StartSearch(
             max_depth,
             game_state.clone(),
-            tc,
             hist.clone(),
-            time_saved_before,
         ))
         .expect("Couldn't send search command!");
     }
@@ -541,14 +570,8 @@ pub fn search_move(
     itcs.report_bestmove();
     //Store new saved time
     let elapsed_time = itcs.get_time_elapsed();
-    let new_timesaved: u64 = (time_saved_before as i64
-        + tc.time_saved(
-            elapsed_time,
-            time_saved_before,
-            itcs.uci_options().move_overhead,
-        ))
-    .max(0) as u64;
-    itcs.saved_time.store(new_timesaved, Ordering::Relaxed);
+    let tc = &mut *itcs.tc.lock().unwrap();
+    tc.saved_time = (tc.saved_time as i64 + tc.time_saved(elapsed_time)).max(0) as u64;
     //And return
     let best_score = itcs.best_pv.lock().unwrap().score;
     Some(best_score)

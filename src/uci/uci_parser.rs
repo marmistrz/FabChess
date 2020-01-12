@@ -8,10 +8,10 @@ use crate::search::searcher::{
     search_move, InterThreadCommunicationSystem, MAX_SKIP_RATIO, MAX_THREADS, MIN_SKIP_RATIO,
     MIN_THREADS,
 };
-use crate::search::timecontrol::{TimeControl, MAX_MOVE_OVERHEAD, MIN_MOVE_OVERHEAD};
+use crate::search::timecontrol::{TimeControlType, MAX_MOVE_OVERHEAD, MIN_MOVE_OVERHEAD};
 use crate::search::MAX_SEARCH_DEPTH;
 use std::io;
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::u64;
@@ -46,7 +46,7 @@ pub fn parse_loop() {
             "ucinewgame" | "newgame" => {
                 newgame(&mut us);
                 itcs.cache().clear();
-                itcs.saved_time.store(0, Ordering::Relaxed);
+                itcs.tc.lock().unwrap().saved_time = 0;
             }
             "isready" => isready(&itcs, true),
             "position" => {
@@ -101,17 +101,17 @@ pub fn print_internal_state(engine: &UCIEngine) {
     println!("{}", engine.internal_state);
 }
 
-pub fn go(engine: &UCIEngine, cmd: &[&str]) -> (TimeControl, usize) {
+pub fn go(engine: &UCIEngine, cmd: &[&str]) -> (TimeControlType, usize) {
     let mut wtime: u64 = 0;
     let mut btime: u64 = 0;
     let mut winc: u64 = 0;
     let mut binc: u64 = 0;
     let mut depth = MAX_SEARCH_DEPTH;
     if cmd[0].to_lowercase() == "infinite" {
-        return (TimeControl::Infinite, depth);
+        return (TimeControlType::Infinite, depth);
     } else if cmd[0].to_lowercase() == "depth" {
         depth = cmd[1].parse::<usize>().unwrap();
-        return (TimeControl::Infinite, depth);
+        return (TimeControlType::Infinite, depth);
     }
     let mut index = 0;
     let mut movestogo: Option<usize> = None;
@@ -131,7 +131,7 @@ pub fn go(engine: &UCIEngine, cmd: &[&str]) -> (TimeControl, usize) {
             }
             "movetime" => {
                 let mvtime = cmd[index + 1].parse::<u64>().unwrap_or(0);
-                return (TimeControl::MoveTime(mvtime), depth);
+                return (TimeControlType::MoveTime(mvtime), depth);
             }
             "movestogo" => movestogo = Some(cmd[index + 1].parse::<usize>().unwrap_or(1)),
             _ => println!("Some parts of the go command weren't recognized well."),
@@ -140,18 +140,18 @@ pub fn go(engine: &UCIEngine, cmd: &[&str]) -> (TimeControl, usize) {
     }
     if movestogo.is_none() {
         if engine.internal_state.color_to_move == 0 {
-            (TimeControl::Incremental(wtime, winc), depth)
+            (TimeControlType::Incremental(wtime, winc), depth)
         } else {
-            (TimeControl::Incremental(btime, binc), depth)
+            (TimeControlType::Incremental(btime, binc), depth)
         }
     } else if let Some(mvs) = movestogo {
         if mvs == 0 {
             panic!("movestogo = 0");
         }
         if engine.internal_state.color_to_move == 0 {
-            (TimeControl::Tournament(wtime, winc, mvs), depth)
+            (TimeControlType::Tournament(wtime, winc, mvs), depth)
         } else {
-            (TimeControl::Tournament(btime, binc, mvs), depth)
+            (TimeControlType::Tournament(btime, binc, mvs), depth)
         }
     } else {
         panic!("Something went wrong in go!");

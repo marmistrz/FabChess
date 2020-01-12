@@ -11,7 +11,6 @@ pub mod timecontrol;
 use crate::board_representation::game_state::*;
 use crate::board_representation::game_state_attack_container::GameStateAttackContainer;
 use crate::search::searcher::Thread;
-use crate::search::timecontrol::TimeControlInformation;
 use history::History;
 use std::fmt::{Display, Formatter, Result};
 
@@ -189,16 +188,8 @@ pub fn in_check(game_state: &GameState, attack_container: &GameStateAttackContai
 #[inline(always)]
 pub fn checkup(thread: &mut Thread) {
     if (thread.id == 0
-        && thread.tc.time_over(
+        && thread.itcs.tc.lock().unwrap().time_over(
             thread.itcs.get_time_elapsed(),
-            &TimeControlInformation {
-                high_score_diff: false,
-                time_saved: thread.time_saved,
-                stable_pv: thread
-                    .itcs
-                    .stable_pv
-                    .load(std::sync::atomic::Ordering::Relaxed),
-            },
             thread.itcs.uci_options().move_overhead,
         ))
         || *thread
@@ -208,6 +199,7 @@ pub fn checkup(thread: &mut Thread) {
             .expect("Reading posioned timeoutflag")
     {
         if thread.id == 0 {
+            println!("Setting timeout flag!");
             *thread
                 .itcs
                 .timeout_flag

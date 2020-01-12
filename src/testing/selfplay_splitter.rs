@@ -3,7 +3,7 @@ use crate::Config;
 use core::board_representation::game_state::*;
 use core::logging::Logger;
 use core::pgn::pgn_writer::*;
-use core::search::timecontrol::TimeControl;
+use core::search::timecontrol::TimeControlType;
 use core::testing::openings::{load_db_until, load_openings_into_queue};
 use core::testing::queue::ThreadSafeQueue;
 use core::testing::{EndConditionInformation, Engine};
@@ -14,7 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 pub fn start_self_play(config: Config) {
-    let tcp1 = TimeControl::Incremental(
+    let tcp1 = TimeControlType::Incremental(
         config.timecontrol_engine_time,
         config.timecontrol_engine_inc,
     );
@@ -24,7 +24,7 @@ pub fn start_self_play(config: Config) {
         tcp1,
         config.engine_path.1.clone(),
     );
-    let tcp2 = TimeControl::Incremental(
+    let tcp2 = TimeControlType::Incremental(
         config.timecontrol_enemies_time,
         config.timecontrol_enemies_inc,
     );

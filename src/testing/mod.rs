@@ -1,4 +1,4 @@
-use crate::search::timecontrol::TimeControl;
+use crate::search::timecontrol::TimeControlType;
 
 pub mod async_communication;
 pub mod openings;
@@ -99,7 +99,7 @@ pub struct Engine {
     pub draws: usize,
     pub losses: usize,
     pub disqs: usize,
-    pub time_control: TimeControl,
+    pub time_control: TimeControlType,
     pub stats: EngineStats,
     pub uci_options: HashMap<String, String>,
 }
@@ -161,7 +161,7 @@ impl Engine {
     pub fn from_path(
         path: &str,
         id: usize,
-        tc: TimeControl,
+        tc: TimeControlType,
         options: HashMap<String, String>,
     ) -> Self {
         let mut res = Engine {
