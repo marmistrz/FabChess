@@ -199,7 +199,7 @@ pub fn checkup(thread: &mut Thread) {
             .expect("Reading posioned timeoutflag")
     {
         if thread.id == 0 {
-            println!("Setting timeout flag!");
+            //println!("Setting timeout flag!");
             *thread
                 .itcs
                 .timeout_flag

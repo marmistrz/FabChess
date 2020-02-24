@@ -139,45 +139,33 @@ impl InterThreadCommunicationSystem {
         &self,
         scored_pv: &ScoredPrincipalVariation,
         fail_low: bool,
-        fail_high: bool,
+        _fail_high: bool,
     ) {
         let mut curr_best = self.best_pv.lock().unwrap();
         //Update pv stability
         if scored_pv.depth > 10 {
+            let tc = &mut *self.tc.lock().unwrap();
+            if scored_pv.score.abs() < 200 {
+                //Use less time when move score goes up, use more time when move scores goes down
+                let change = curr_best.score - scored_pv.score;
+                let factor = 1. - (change as f64 / 7.0) * 0.02;
+
+                tc.update_aspired_time(factor.powf(1. / self.uci_options().threads as f64));
+            }
             if curr_best.pv.pv[0] == scored_pv.pv.pv[0] {
-                let tc = &mut *self.tc.lock().unwrap();
+                tc.stable_pv = true;
                 if fail_low {
                     if curr_best.score == 0 && tc.typ != TimeControlType::Infinite {
                         tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
                     }
-                    tc.update_aspired_time(1.08f64.powf(1. / self.uci_options().threads as f64));
-                } else {
-                    if curr_best.score != 0 || scored_pv.score - curr_best.score >= 0 {
-                        tc.stable_pv = true;
-                        tc.update_aspired_time(
-                            0.94f64.powf(1. / self.uci_options().threads as f64),
-                        );
-                    }
-                }
-            } else {
-                let tc = &mut *self.tc.lock().unwrap();
-                tc.stable_pv = false;
-                if fail_high && scored_pv.score - curr_best.score > 0 {
-                    //PV_CHANGE
                     tc.update_aspired_time(1.05f64.powf(1. / self.uci_options().threads as f64));
                 } else {
-                    let score_diff = scored_pv.score - curr_best.score;
-                    if score_diff >= 0 {
-                        tc.update_aspired_time(
-                            1.08f64.powf(1. / self.uci_options().threads as f64),
-                        );
-                    } else {
-                        if tc.typ != TimeControlType::Infinite {
-                            tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
-                        }
-                        let val = 1. + ((0.05 * score_diff.abs() as f64 / 10.).max(0.15));
-                        tc.update_aspired_time(val.powf(1. / self.uci_options().threads as f64));
-                    }
+                    tc.update_aspired_time(0.98f64.powf(1. / self.uci_options().threads as f64));
+                }
+            } else {
+                tc.stable_pv = false;
+                if tc.typ != TimeControlType::Infinite {
+                    tc.aspired_time = tc.aspired_time.max(tc.typ.compound_time());
                 }
             }
         }

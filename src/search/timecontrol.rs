@@ -1,4 +1,4 @@
-pub const DEFAULT_MOVE_OVERHEAD: u64 = 35;
+pub const DEFAULT_MOVE_OVERHEAD: u64 = 25;
 pub const MIN_MOVE_OVERHEAD: u64 = 0;
 pub const MAX_MOVE_OVERHEAD: u64 = 20000;
 
@@ -12,7 +12,7 @@ impl Default for TimeControl {
         TimeControl {
             typ: TimeControlType::Infinite,
             aspired_time: 0u64,
-            stable_pv: false,
+            stable_pv: true,
         }
     }
 }
@@ -51,7 +51,7 @@ impl TimeControlType {
                 assert!(*left > time_spent);
                 *self = TimeControlType::Incremental(*left - time_spent + *inc, *inc);
             }
-            TimeControlType::Infinite => panic!("Should not call updat eon Infinite"),
+            TimeControlType::Infinite => panic!("Should not call update on Infinite"),
             TimeControlType::Tournament(left, inc, movestogo) => {
                 assert!(*left > time_spent);
                 let mut new_left = *left - time_spent + *inc;
@@ -127,7 +127,7 @@ impl TimeControl {
                 time_spent + 4 * move_overhead > self.typ.time_left()
                     || (self.stable_pv
                         || time_spent + move_overhead
-                            > (self.typ.compound_time() as f64 + 4. * self.typ.base_time() as f64)
+                            > (self.typ.compound_time() as f64 + 2. * self.typ.base_time() as f64)
                                 as u64)
                         && time_spent + move_overhead > self.aspired_time
             }
