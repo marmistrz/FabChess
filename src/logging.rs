@@ -1,6 +1,6 @@
 pub const VERBOSE: bool = false;
 pub const LOG_FILE: &str = "log.txt";
-pub const LOG_TO_STDOUT: bool = false;
+pub const LOG_TO_STDOUT: bool = true;
 
 use std::fs::File;
 use std::fs::OpenOptions;

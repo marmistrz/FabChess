@@ -39,7 +39,7 @@ impl Cache {
             let chunksize = (buckets + num_threads - 1) / num_threads;
 
             let mut ptr = cache_vec.as_mut_ptr();
-            let mut handles = Vec::new();
+            // let mut handles = Vec::new();
 
             for t in 0..num_threads {
                 // The last chunk may be shorter.
@@ -47,21 +47,21 @@ impl Cache {
 
                 // circumvent the fact that raw pointers are not Send
                 let w = PtrWrapper { p: ptr.clone() };
-                handles.push(std::thread::spawn(move || {
+                // handles.push(std::thread::spawn(move || {
                     let mut inner_ptr = w.p;
                     for _ in 0..this_chunk {
                         *inner_ptr = CacheBucket::default();
                         inner_ptr = inner_ptr.offset(1);
                     }
-                }));
+                // }));
                 ptr = ptr.offset(chunksize as isize);
             }
 
-            for handle in handles {
-                handle
-                    .join()
-                    .expect("Could not unwrap handle while initializing the cache!");
-            }
+            // for handle in handles {
+            //     handle
+            //         .join()
+            //         .expect("Could not unwrap handle while initializing the cache!");
+            // }
         }
         return cache_vec;
     }
@@ -178,7 +178,7 @@ impl Cache {
     }
 }
 
-#[repr(align(64))]
+//#[repr(align(64))]
 #[derive(Copy, Clone)]
 pub struct CacheBucket([CacheEntry; 3]);
 

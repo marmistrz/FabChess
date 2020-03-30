@@ -3,7 +3,13 @@ extern crate hostname;
 use crate::board_representation::game_state::*;
 use crate::move_generation::makemove::make_move;
 use chrono::Local;
+
+#[cfg(not(target_arch = "wasm32"))]
 use hostname::get_hostname;
+#[cfg(target_arch = "wasm32")]
+fn get_hostname() -> Option<String> {
+    String::from("WASM").into()
+}
 
 pub struct PGNMetadata {
     pub event_name: Option<String>,

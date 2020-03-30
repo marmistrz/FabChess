@@ -20,8 +20,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+#[allow(unused)]
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
+#[allow(unused)]
 use std::thread;
 use std::time::Instant;
 
@@ -53,8 +55,6 @@ pub struct InterThreadCommunicationSystem {
     pub timeout_flag: RwLock<bool>,
     pub saved_time: AtomicU64,
     pub tx: RwLock<Vec<Sender<ThreadInstruction>>>,
-    rx_f: Receiver<()>,
-    tx_f: Sender<()>,
 }
 
 impl InterThreadCommunicationSystem {
@@ -68,7 +68,7 @@ impl InterThreadCommunicationSystem {
         unsafe { self.nodes_searched.get().as_mut().unwrap() }
     }
     pub fn new() -> Self {
-        let (tx_f, rx_f) = channel();
+        // let (tx_f, rx_f) = channel();
         InterThreadCommunicationSystem {
             uci_options: UnsafeCell::new(UCIOptions::default()),
             best_pv: Mutex::new(ScoredPrincipalVariation::default()),
@@ -83,8 +83,6 @@ impl InterThreadCommunicationSystem {
             timeout_flag: RwLock::new(false),
             saved_time: AtomicU64::new(0u64),
             tx: RwLock::new(Vec::new()),
-            rx_f,
-            tx_f,
         }
     }
 
@@ -92,28 +90,29 @@ impl InterThreadCommunicationSystem {
         itcs: &Arc<InterThreadCommunicationSystem>,
         new_thread_count: usize,
     ) {
-        for tx in itcs.tx.read().unwrap().iter() {
-            tx.send(ThreadInstruction::Exit)
-                .expect("couldn't send exit flag");
-        }
-        for _ in 0..itcs.tx.read().unwrap().len() {
-            itcs.rx_f.recv().expect("Couldn't receive exit flag!")
-        }
+        // for tx in itcs.tx.read().unwrap().iter() {
+        //     tx.send(ThreadInstruction::Exit)
+        //         .expect("couldn't send exit flag");
+        // }
+        // for _ in 0..itcs.tx.read().unwrap().len() {
+        //     itcs.rx_f.recv().expect("Couldn't receive exit flag!")
+        // }
         itcs.uci_options().threads = new_thread_count;
         let itcs_tx = &mut *itcs.tx.write().unwrap();
         let itcs_nodes_searched = itcs.nodes_searched();
         *itcs_tx = Vec::with_capacity(new_thread_count);
         *itcs_nodes_searched = Vec::with_capacity(new_thread_count);
-        for id in 0..new_thread_count {
+        for _ in 0..new_thread_count {
             itcs_nodes_searched.push(AtomicU64::new(0));
-            let (tx, rx) = channel();
-            itcs_tx.push(tx);
-            let tx_f = itcs.tx_f.clone();
-            let self_arc = Arc::clone(&itcs);
-            thread::spawn(move || {
-                let mut thread = Thread::new(id, self_arc, rx, tx_f);
-                thread.run();
-            });
+        //     let (tx, rx) = channel();
+        //     itcs_tx.push(tx);
+        //     let tx_f = itcs.tx_f.clone();
+        //     let self_arc = Arc::clone(&itcs);
+        //     thread::spawn(move ||
+        //     {
+        //         let mut thread = Thread::new(id, self_arc, rx, tx_f);
+        //         thread.run();
+        //     };
         }
     }
 
@@ -265,8 +264,6 @@ pub struct Thread {
     pub current_pv: ScoredPrincipalVariation,
     pub pv_applicable: Vec<u64>, //Hashes of gamestates the pv plays along
     pub main_thread_in_depth: bool,
-    rx: Receiver<ThreadInstruction>,
-    tx: Sender<()>,
 }
 
 impl Thread {
@@ -294,12 +291,7 @@ impl Thread {
             }
         }
     }
-    fn new(
-        id: usize,
-        itcs: Arc<InterThreadCommunicationSystem>,
-        rx: Receiver<ThreadInstruction>,
-        tx: Sender<()>,
-    ) -> Self {
+    fn new(id: usize, itcs: Arc<InterThreadCommunicationSystem>) -> Self {
         let mut pv_table = Vec::with_capacity(MAX_SEARCH_DEPTH);
         for i in 0..MAX_SEARCH_DEPTH {
             pv_table.push(PrincipalVariation::new(MAX_SEARCH_DEPTH - i));
@@ -325,39 +317,48 @@ impl Thread {
             current_pv: ScoredPrincipalVariation::default(),
             pv_applicable: Vec::with_capacity(MAX_SEARCH_DEPTH),
             main_thread_in_depth: false,
-            rx,
-            tx,
         }
     }
 
-    fn run(&mut self) {
-        loop {
-            let msg: ThreadInstruction = self.rx.recv().unwrap();
-            match msg {
-                ThreadInstruction::Exit => {
-                    self.tx.send(()).expect("Error sending exit flag!");
-                    break;
-                }
-                ThreadInstruction::StartSearch(max_depth, state, tc, history, time_saved) => {
-                    self.root_plies_played = (state.full_moves - 1) * 2 + state.color_to_move;
-                    self.history = history;
-                    self.time_saved = time_saved;
-                    self.pv_applicable.clear();
-                    self.current_pv = ScoredPrincipalVariation::default();
-                    self.main_thread_in_depth = false;
-                    self.killer_moves = [[None; 2]; MAX_SEARCH_DEPTH];
-                    self.hh_score = [[[0; 64]; 64]; 2];
-                    self.bf_score = [[[1; 64]; 64]; 2];
-                    self.history_score = [[[0; 64]; 64]; 2];
-                    self.search_statistics = SearchStatistics::default();
-                    self.tc = tc;
-                    self.self_stop = false;
-                    self.search(max_depth, state);
-                    self.tx.send(()).expect("Error sending finish flag!");
-                }
-            }
-        }
+    fn start_search(
+        &mut self,
+        max_depth: i16,
+        state: GameState,
+        tc: TimeControl,
+        history: History,
+        time_saved: u64,
+    ) {
+        self.root_plies_played = (state.full_moves - 1) * 2 + state.color_to_move;
+        self.history = history;
+        self.time_saved = time_saved;
+        self.pv_applicable.clear();
+        self.current_pv = ScoredPrincipalVariation::default();
+        self.main_thread_in_depth = false;
+        self.killer_moves = [[None; 2]; MAX_SEARCH_DEPTH];
+        self.hh_score = [[[0; 64]; 64]; 2];
+        self.bf_score = [[[1; 64]; 64]; 2];
+        self.history_score = [[[0; 64]; 64]; 2];
+        self.search_statistics = SearchStatistics::default();
+        self.tc = tc;
+        self.self_stop = false;
+        self.search(max_depth, state);
+        // self.tx.send(()).expect("Error sending finish flag!");
     }
+
+    // fn run(&mut self) {
+    //     loop {
+    //         let msg: ThreadInstruction = self.rx.try_recv().unwrap();
+    //         match msg {
+    //             ThreadInstruction::Exit => {
+    //                 self.tx.send(()).expect("Error sending exit flag!");
+    //                 break;
+    //             }
+    //             ThreadInstruction::StartSearch(max_depth, state, tc, history, time_saved) => {
+    //                 self.start_search(max_depth, state, tc, history, time_saved)
+    //             }
+    //         }
+    //     }
+    // }
 
     fn search(&mut self, max_depth: i16, state: GameState) {
         if self.itcs.uci_options().debug_print {
@@ -482,7 +483,10 @@ pub fn search_move(
     itcs.cache_status.store(0, Ordering::Relaxed);
     *itcs.timeout_flag.write().unwrap() = false;
 
+    let mut thread = Thread::new(0, Arc::clone(&itcs));
+
     let time_saved_before = itcs.saved_time.load(Ordering::Relaxed);
+    println!("step1");
     //Step 1. Check how many legal moves there are
     let mut movelist = MoveList::default();
     generate_moves(
@@ -492,6 +496,7 @@ pub fn search_move(
         &mut GameStateAttackContainer::from_state(&game_state),
     );
 
+    println!("step2");
     //Step2. Check legal moves
     if movelist.move_list.len() == 0 {
         panic!("The root position given does not have any legal move!");
@@ -505,6 +510,7 @@ pub fn search_move(
         return None;
     }
 
+    println!("step3");
     //Step3. Prepare history
     let mut hist: History = History::default();
     let mut relevant_hashes: Vec<u64> = Vec::with_capacity(100);
@@ -518,8 +524,17 @@ pub fn search_move(
         hist.push(*hashes, false);
     }
 
+    println!("step4");
     //Step 4. Send search command
-    for tx in itcs.tx.read().unwrap().iter() {
+
+    thread.start_search(
+        max_depth,
+        game_state.clone(),
+        tc,
+        hist.clone(),
+        time_saved_before,
+    );
+    /*for tx in itcs.tx.read().unwrap().iter() {
         tx.send(ThreadInstruction::StartSearch(
             max_depth,
             game_state.clone(),
@@ -528,14 +543,18 @@ pub fn search_move(
             time_saved_before,
         ))
         .expect("Couldn't send search command!");
-    }
+    }*/
 
-    //Step 5. Wait until every thread finished up
-    for _ in 0..itcs.uci_options().threads {
-        itcs.rx_f
-            .recv()
-            .expect("Could not receive finish flag from channel");
-    }
+    // //Step 5. Wait until every thread finished up
+    // for _ in 0..itcs.uci_options().threads {
+    //     std::thread::sleep_ms(10000000);
+    //     // loop
+    //     // match itcs.rx_f
+    //     //     .try_recv() {
+
+    //     //     }
+    //     //     .expect("Could not receive finish flag from channel");
+    // }
 
     //Step 6. Report to UCI
     itcs.report_bestmove();
