@@ -4,8 +4,9 @@ use crate::board_representation::game_state_attack_container::GameStateAttackCon
 use crate::move_generation::makemove::make_move;
 use crate::move_generation::movegen;
 use crate::search::cache::{Cache, MAX_HASH_SIZE, MIN_HASH_SIZE};
+#[allow(unused)]
 use crate::search::searcher::{
-    search_move, InterThreadCommunicationSystem, MAX_SKIP_RATIO, MAX_THREADS, MIN_SKIP_RATIO,
+    search_move, InterThreadCommunicationSystem, Thread, MAX_SKIP_RATIO, MAX_THREADS, MIN_SKIP_RATIO,
     MIN_THREADS,
 };
 use crate::search::timecontrol::{TimeControl, MAX_MOVE_OVERHEAD, MIN_MOVE_OVERHEAD};
@@ -17,6 +18,7 @@ use std::time::Duration;
 use std::u64;
 
 pub fn parse_loop() {
+    println!("parsel oop");
     let mut history: Vec<GameState> = vec![];
 
     let mut us = UCIEngine::standard();
@@ -62,12 +64,7 @@ pub fn parse_loop() {
                 }
                 let new_state = us.internal_state.clone();
                 let itcs = Arc::clone(&itcs);
-                thread::Builder::new()
-                    .stack_size(2 * 1024 * 1024)
-                    .spawn(move || {
-                        search_move(itcs, depth as i16, new_state, new_history, tc);
-                    })
-                    .expect("Couldn't start thread");
+                search_move(itcs, depth as i16, new_state, new_history, tc); // ???
             }
             "stop" => {
                 *itcs.timeout_flag.write().unwrap() = true;
@@ -303,11 +300,12 @@ pub fn setoption(cmd: &[&str], itcs: &Arc<InterThreadCommunicationSystem>) {
                 return;
             }
             "threads" => {
-                let num = cmd[index + 2]
-                    .parse::<usize>()
-                    .expect("Invalid Threads value!");
-                InterThreadCommunicationSystem::update_thread_count(&itcs, num);
-                println!("info String Succesfully set Threads to {}", num);
+                eprintln!("Error: threads unsupported in WASI build!");
+                // let num = cmd[index + 2]
+                //     .parse::<usize>()
+                //     .expect("Invalid Threads value!");
+                // InterThreadCommunicationSystem::update_thread_count(&itcs, num);
+                // println!("info String Succesfully set Threads to {}", num);
                 return;
             }
             "moveoverhead" => {

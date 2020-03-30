@@ -10,6 +10,7 @@ pub mod misc;
 pub mod move_generation;
 pub mod pgn;
 pub mod search;
+#[cfg(tests)]
 pub mod testing;
 pub mod tuning;
 pub mod uci;
@@ -19,6 +20,11 @@ use self::move_generation::makemove::make_move;
 use self::move_generation::movegen;
 use self::search::reserved_memory::{ReservedAttackContainer, ReservedMoveList};
 use std::time::Instant;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub const ENABLE_THREADS: bool = true;
+#[cfg(target_arch = "wasm32")]
+pub const ENABLE_THREADS: bool = false;
 
 pub fn perft_div(g: &GameState, depth: usize) -> u64 {
     let mut count = 0u64;
