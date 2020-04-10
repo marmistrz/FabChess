@@ -22,6 +22,7 @@ tokio = { version = "0.1.19", optional = true }
 tokio-process = { version = "0.2", optional = true }
 tokio-io = { version = "0.1.12", optional = true }
 atomic = "0.4.5"
+fake_instant = "0.4.0"
 [profile.release]
 opt-level=3
 debug=false

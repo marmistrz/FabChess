@@ -32,7 +32,7 @@ mod imports {
 }
 #[cfg(target_arch = "wasm32")]
 mod imports {
-    pub use std::time::Instant;
+    pub use fake_instant::FakeClock as Instant;
     pub type AtomicU64 = atomic::Atomic<u64>;
 }
 use imports::*;

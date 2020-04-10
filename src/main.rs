@@ -1,7 +1,7 @@
 extern crate core;
 
 use core::logging::log;
-use std::time::Instant;
+use fake_instant::FakeClock as Instant;
 
 fn main() {
     let now = Instant::now();

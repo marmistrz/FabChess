@@ -19,7 +19,7 @@ use self::board_representation::game_state::GameState;
 use self::move_generation::makemove::make_move;
 use self::move_generation::movegen;
 use self::search::reserved_memory::{ReservedAttackContainer, ReservedMoveList};
-use std::time::Instant;
+use fake_instant::FakeClock as Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub const ENABLE_THREADS: bool = true;
