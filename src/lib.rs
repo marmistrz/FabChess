@@ -50,7 +50,7 @@ pub fn perft_div(g: &GameState, depth: usize) -> u64 {
     println!("{}", count);
     let after = Instant::now();
     let dur = after.duration_since(now);
-    let secs = dur.as_millis() as f64 / 1000.0;
+    let secs = dur.as_secs_f64();
     println!(
         "{}",
         &format!("Time {} ({} nps)", secs, count as f64 / secs)

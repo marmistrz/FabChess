@@ -17,7 +17,6 @@ use crate::search::{CombinedSearchParameters, ScoredPrincipalVariation, MATE_SCO
 use crate::uci::uci_engine::UCIOptions;
 use std::cell::UnsafeCell;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 #[allow(unused)]
@@ -25,7 +24,18 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
 #[allow(unused)]
 use std::thread;
-use std::time::Instant;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod imports {
+    pub use std::time::Instant;
+    pub use std::sync::atomic::AtomicU64;
+}
+#[cfg(target_arch = "wasm32")]
+mod imports {
+    pub use std::time::Instant;
+    pub type AtomicU64 = atomic::Atomic<u64>;
+}
+use imports::*;
 
 pub const DEFAULT_SKIP_RATIO: usize = 2;
 pub const MIN_SKIP_RATIO: usize = 1;
@@ -119,7 +129,7 @@ impl InterThreadCommunicationSystem {
     pub fn get_time_elapsed(&self) -> u64 {
         let now = Instant::now();
         let dur = now.duration_since(*self.start_time.read().unwrap());
-        dur.as_millis() as u64
+        (dur.as_secs() as u64) * 1000
     }
 
     pub fn update(&self, thread_id: usize, nodes_searched: u64, seldepth: usize) {
@@ -158,8 +168,8 @@ impl InterThreadCommunicationSystem {
             let fill_status = if cache_status.is_none()
                 || Instant::now()
                     .duration_since(cache_status.unwrap())
-                    .as_millis()
-                    > 200
+                    .as_secs()
+                    > 1
             {
                 *cache_status = Some(Instant::now());
                 self.cache_status

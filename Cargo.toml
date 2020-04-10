@@ -21,6 +21,7 @@ serde_json = "1.0"
 tokio = { version = "0.1.19", optional = true }
 tokio-process = { version = "0.2", optional = true }
 tokio-io = { version = "0.1.12", optional = true }
+atomic = "0.4.5"
 [profile.release]
 opt-level=3
 debug=false
