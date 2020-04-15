@@ -10,11 +10,21 @@ use core_sdk::search::searcher::{
 };
 use core_sdk::search::timecontrol::{TimeControl, MAX_MOVE_OVERHEAD, MIN_MOVE_OVERHEAD};
 use core_sdk::search::MAX_SEARCH_DEPTH;
-use std::io;
 use std::sync::{atomic::Ordering, Arc};
 use std::thread;
 use std::time::Duration;
 use std::u64;
+use std::io::BufRead;
+
+mod io {
+    use std::fs::File;
+    use std::io::BufReader;
+    const INFILE: &'static str = "in.txt";
+    pub fn stdin() -> BufReader<File> {
+        let file = File::open(INFILE).expect("opening the input file failed");
+        BufReader::new(file)
+    }
+}
 
 pub fn parse_loop() {
     let mut history: Vec<GameState> = vec![];
@@ -27,7 +37,7 @@ pub fn parse_loop() {
     let mut movelist = movegen::MoveList::default();
     let mut attack_container = GameStateAttackContainer::default();
 
-    let stdin = io::stdin();
+    let mut stdin = io::stdin();
     let mut line = String::new();
     loop {
         line.clear();
