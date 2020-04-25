@@ -4,6 +4,7 @@ use core::logging::log;
 use fake_instant::FakeClock as Instant;
 
 fn main() {
+    println!("Welcome to FabChess");
     let now = Instant::now();
     core::bitboards::init_bitboards();
     core::move_generation::magic::init_magics();
