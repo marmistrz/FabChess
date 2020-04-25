@@ -26,6 +26,10 @@ pub const ENABLE_THREADS: bool = true;
 #[cfg(target_arch = "wasm32")]
 pub const ENABLE_THREADS: bool = false;
 
+pub const INPUT_FILE: &'static str = "in.txt";
+pub const OUTPUT_FILE: &'static str = "out.txt";
+pub const WRITE_TO_STDOUT: bool = false;
+
 pub fn perft_div(g: &GameState, depth: usize) -> u64 {
     let mut count = 0u64;
     let mut movelist = ReservedMoveList::default();

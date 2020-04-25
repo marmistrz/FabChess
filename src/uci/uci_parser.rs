@@ -6,23 +6,23 @@ use crate::move_generation::movegen;
 use crate::search::cache::{Cache, MAX_HASH_SIZE, MIN_HASH_SIZE};
 #[allow(unused)]
 use crate::search::searcher::{
-    search_move, InterThreadCommunicationSystem, Thread, MAX_SKIP_RATIO, MAX_THREADS, MIN_SKIP_RATIO,
-    MIN_THREADS,
+    search_move, InterThreadCommunicationSystem, Thread, MAX_SKIP_RATIO, MAX_THREADS,
+    MIN_SKIP_RATIO, MIN_THREADS,
 };
 use crate::search::timecontrol::{TimeControl, MAX_MOVE_OVERHEAD, MIN_MOVE_OVERHEAD};
 use crate::search::MAX_SEARCH_DEPTH;
+use std::io::{BufRead, Write};
 use std::sync::{atomic::Ordering, Arc};
 use std::thread;
 use std::time::Duration;
 use std::u64;
-use std::io::BufRead;
 
 mod io {
     use std::fs::File;
     use std::io::BufReader;
-    const INFILE: &'static str = "in.txt";
     pub fn stdin() -> BufReader<File> {
-        let file = File::open(INFILE).expect("opening the input file failed");
+        // FIXME expect
+        let file = File::open(crate::INPUT_FILE).expect("opening the input file failed");
         BufReader::new(file)
     }
 }
@@ -302,12 +302,14 @@ pub fn setoption(cmd: &[&str], itcs: &Arc<InterThreadCommunicationSystem>) {
                 itcs.uci_options().hash_size = num;
                 let num_threads = itcs.uci_options().threads;
                 *itcs.cache() = Cache::with_size_threaded(num, num_threads);
-                println!("info String Succesfully set Hash to {}", num);
+                writeln!(itcs.output(), "info String Succesfully set Hash to {}", num)
+                    .expect("engine output write failed");
                 return;
             }
             "clearhash" => {
                 itcs.cache().clear_threaded(itcs.uci_options().threads);
-                println!("info String Succesfully cleared hash!");
+                writeln!(itcs.output(), "info String Succesfully cleared hash!")
+                    .expect("engine output write failed");
                 return;
             }
             "threads" => {
@@ -324,7 +326,12 @@ pub fn setoption(cmd: &[&str], itcs: &Arc<InterThreadCommunicationSystem>) {
                     .parse::<u64>()
                     .expect("Invalid MoveOverhead value!");
                 itcs.uci_options().move_overhead = num;
-                println!("info String Succesfully set MoveOverhad to {}", num);
+                writeln!(
+                    itcs.output(),
+                    "info String Succesfully set MoveOverhad to {}",
+                    num
+                )
+                .expect("engine output write failed");
                 return;
             }
             "debugsmpprint" => {
@@ -332,7 +339,12 @@ pub fn setoption(cmd: &[&str], itcs: &Arc<InterThreadCommunicationSystem>) {
                     .parse::<bool>()
                     .expect("Invalid DebugSMPPrint value!");
                 itcs.uci_options().debug_print = val;
-                println!("info String Succesfully set DebugSMPPrint to {}", val);
+                writeln!(
+                    itcs.output(),
+                    "info String Succesfully set DebugSMPPrint to {}",
+                    val
+                )
+                .expect("engine output write failed");
                 return;
             }
             "smpskipratio" => {
@@ -340,7 +352,12 @@ pub fn setoption(cmd: &[&str], itcs: &Arc<InterThreadCommunicationSystem>) {
                     .parse::<usize>()
                     .expect("Invalid SMPSkipRatio value!");
                 itcs.uci_options().skip_ratio = num;
-                println!("info String Succesfully set SMPSkipRatio to {}", num);
+                writeln!(
+                    itcs.output(),
+                    "info String Succesfully set SMPSkipRatio to {}",
+                    num
+                )
+                .expect("engine output write failed");
                 return;
             }
             _ => {

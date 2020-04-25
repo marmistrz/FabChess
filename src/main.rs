@@ -20,6 +20,7 @@ fn main() {
     ));
     let mut args = std::env::args();
     if args.nth(1) == Some("bench".to_owned()) {
+        eprintln!("Bench unsupported in gWASM version");
         // bench(
         //     args.nth(2)
         //         .and_then(|depth| depth.parse::<usize>().ok())
