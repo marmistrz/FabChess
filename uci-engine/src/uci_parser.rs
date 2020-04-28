@@ -62,12 +62,7 @@ pub fn parse_loop() {
                 }
                 let new_state = us.internal_state.clone();
                 let itcs = Arc::clone(&itcs);
-                thread::Builder::new()
-                    .stack_size(2 * 1024 * 1024)
-                    .spawn(move || {
-                        search_move(itcs, depth as i16, new_state, new_history, tc);
-                    })
-                    .expect("Couldn't start thread");
+                search_move(itcs, depth as i16, new_state, new_history, tc); // ???
             }
             "stop" => {
                 *itcs.timeout_flag.write().unwrap() = true;
@@ -303,11 +298,12 @@ pub fn setoption(cmd: &[&str], itcs: &Arc<InterThreadCommunicationSystem>) {
                 return;
             }
             "threads" => {
-                let num = cmd[index + 2]
-                    .parse::<usize>()
-                    .expect("Invalid Threads value!");
-                InterThreadCommunicationSystem::update_thread_count(&itcs, num);
-                println!("info String Succesfully set Threads to {}", num);
+                eprintln!("Error: threads unsupported in WASI build!");
+                // let num = cmd[index + 2]
+                //     .parse::<usize>()
+                //     .expect("Invalid Threads value!");
+                // InterThreadCommunicationSystem::update_thread_count(&itcs, num);
+                // println!("info String Succesfully set Threads to {}", num);
                 return;
             }
             "moveoverhead" => {
