@@ -1,7 +1,11 @@
-# FabChess
-UCI compliant chess engine in Rust.
+# FabChess for gWASM
+UCI compliant chess engine in Rust, ported to gWASM.
+Based on the [original engine](https://github.com/fabianvdW/FabChess) written by Fabian von der Warth.
 
-This is only an engine, connect it with a gui for real usage.
+This is only an engine, use [golemate](https://github.com/golemfactory/golemate) to use with Golem Network.
+
+## Known issues
+* sp-wasm running
 
 ## Wiki
 Interested in how it works?
@@ -220,7 +224,7 @@ You can run perft on an arbitrary position. Note that if there is no king on the
 ```
 > position startpos
 > perft 6
-< 
+<
 a2a3: 4463267
 b2b3: 5310358
 c2c3: 5417640
